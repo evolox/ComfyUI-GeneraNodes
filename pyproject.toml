@@ -1,0 +1,15 @@
+[project]
+name = "comfyui-generanodes"
+description = "Genera custom nodes and extensions"
+version = "1.0.0"
+license = {file = "LICENSE"}
+dependencies = ["google-cloud-storage"]
+
+[project.urls]
+Repository = "https://github.com/evolox/ComfyUI-GeneraNodes"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = ""
+DisplayName = "ComfyUI-GeneraNodes"
+Icon = ""
