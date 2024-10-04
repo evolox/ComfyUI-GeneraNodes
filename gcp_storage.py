@@ -36,7 +36,7 @@ class upload_to_gcp_storage:
     CATEGORY = "Genera"
 
     def upload_to_gcp_storage(self, images, file_name, test_name, bucket_name, config):
-        gcp_service_json = "custom_nodes/ComfyUI-Genera/gcp_config.json"
+        gcp_service_json = "./custom_nodes/ComfyUI-Genera/gcp_config.json"
         print(f"Setting [GOOGLE_APPLICATION_CREDENTIALS] to {gcp_service_json}..")
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gcp_service_json
 
