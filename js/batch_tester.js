@@ -130,7 +130,7 @@ async function runTest() {
   const uploadNode = app.graph._nodes.find(
     (n) => n.type === "Genera.GCPStorageNode"
   );
-  uploadNode.widgets[2].value = JSON.stringify(jobs);
+  uploadNode.widgets[3].value = JSON.stringify(jobs);
 
   for (let job of jobs) {
     uploadNode.widgets[0].value = job.fileName;
