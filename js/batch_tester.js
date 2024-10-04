@@ -140,17 +140,17 @@ async function runTest() {
       node.widgets[item.widgetIndex].value = item.variant;
     }
 
-    await new Promise(async (resolve) => {
-      await app.queuePrompt(0, 1);
-      const listener = ({ detail }) => {
-        const internalQueueSize = detail?.exec_info?.queue_remaining;
-        if (internalQueueSize === 0) {
-          api.removeEventListener("status", listener);
-          resolve();
-        }
-      };
-      api.addEventListener("status", listener);
-    });
+    await app.queuePrompt(0, 1);
+    // await new Promise(async (resolve) => {
+    //   const listener = ({ detail }) => {
+    //     const internalQueueSize = detail?.exec_info?.queue_remaining;
+    //     if (internalQueueSize === 0) {
+    //       api.removeEventListener("status", listener);
+    //       resolve();
+    //     }
+    //   };
+    //   api.addEventListener("status", listener);
+    // });
   }
 
   if (button) {
