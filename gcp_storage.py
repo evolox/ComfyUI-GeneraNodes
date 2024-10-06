@@ -43,7 +43,7 @@ class upload_to_gcp_storage:
         storage_client = storage.Client()
         bucket = storage_client.bucket(bucket_name)
 
-        if file_name == "0":  # If file_name is "0", create and upload config.json
+        if file_name == "0000":  # If file_name is "0", create and upload config.json
             try:
                 # Parse the config string into a JSON object
                 config_data = json.loads(config)
