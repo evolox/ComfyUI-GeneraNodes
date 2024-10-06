@@ -43,7 +43,8 @@ function parseState(state) {
         //string
         const vars = value.map((v) => ({
           nodeId: node.id,
-          widgetIndex: key,
+          nodeName: node.title,
+          widgetName: key,
           variant: v,
         }));
         variants.push(...vars);
@@ -52,12 +53,13 @@ function parseState(state) {
         const steps = generateVariants(value);
         const vars = steps.map((s) => ({
           nodeId: node.id,
-          widgetIndex: key,
+          nodeName: node.title,
+          widgetName: key,
           variant: s,
         }));
         variants.push(...vars);
       }
-      console.log(variants);
+      console.log("vars:", variants);
     }
   }
   return variants;
@@ -83,15 +85,15 @@ function generateVariants({ min, max, step }) {
 
 function generateJobs(variants) {
   const groupedByWidget = variants.reduce((acc, item) => {
-    if (!acc[item.widgetIndex]) {
-      acc[item.widgetIndex] = [];
+    if (!acc[item.widgetName]) {
+      acc[item.widgetName] = [];
     }
-    acc[item.widgetIndex].push(item);
+    acc[item.widgetName].push(item);
     return acc;
   }, {});
 
-  const widgetIndexes = Object.keys(groupedByWidget);
-  const variantGroups = widgetIndexes.map((index) => groupedByWidget[index]);
+  const widgetNames = Object.keys(groupedByWidget);
+  const variantGroups = widgetNames.map((index) => groupedByWidget[index]);
 
   function cartesianProduct(arrays) {
     return arrays.reduce(
@@ -105,11 +107,7 @@ function generateJobs(variants) {
 
   const result = allVariants.map((combination) => ({
     fileName: i++,
-    job: combination.map((item) => ({
-      nodeId: item.nodeId,
-      widgetIndex: item.widgetIndex,
-      variant: item.variant,
-    })),
+    combination,
   }));
 
   console.log("allVariants", result);
@@ -135,22 +133,13 @@ async function runTest() {
   for (let job of jobs) {
     uploadNode.widgets[0].value = job.fileName;
 
-    for (let item of job.job) {
-      const node = app.graph._nodes.find((n) => n.id === item.nodeId);
-      node.widgets[item.widgetIndex].value = item.variant;
+    for (let combination of job.combination) {
+      const node = app.graph.getNodeById(combination.nodeId);
+      node.widgets.find((w) => w.name === combination.widgetName).value =
+        combination.variant;
     }
 
     await app.queuePrompt(0, 1);
-    // await new Promise(async (resolve) => {
-    //   const listener = ({ detail }) => {
-    //     const internalQueueSize = detail?.exec_info?.queue_remaining;
-    //     if (internalQueueSize === 0) {
-    //       api.removeEventListener("status", listener);
-    //       resolve();
-    //     }
-    //   };
-    //   api.addEventListener("status", listener);
-    // });
   }
 
   if (button) {

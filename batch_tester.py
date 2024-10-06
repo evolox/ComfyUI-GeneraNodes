@@ -36,10 +36,6 @@ class BatchTester:
         for key, value in json_input.items():
             if not isinstance(key, str):
                 raise ValueError(f"Keys must be strings, got {type(key).__name__}")
-            try:
-                int(key)
-            except ValueError:
-                raise ValueError(f"Keys must be strings representing numbers, got '{key}'")
     
             if isinstance(value, list):
                 if not all(isinstance(item, str) for item in value):
