@@ -106,7 +106,7 @@ function generateJobs(variants) {
   let i = 0;
 
   const result = allVariants.map((combination) => ({
-    fileName: i++,
+    fileName: String(i++).padStart(4, "0"),
     combination,
   }));
 
