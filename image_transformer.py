@@ -2,6 +2,8 @@ import cv2
 import torch
 import numpy as np
 
+from .densepose import HumanHeightDetector
+
 class ImageTransformer:
     def __init__(self):
         self.image = None
@@ -48,8 +50,8 @@ class GeneraImageTransformer:
         return {
             "required": {
                 "images": ("IMAGE", ),
-                "densePoseImage": ("IMAGE", ),  # Если не используется, можно удалить
-                # "height": ("INT", ),  # Удалено, так как функционал resize_image удалён
+                "densePoseImage": ("IMAGE", ),
+                "height": ("INT", ),
             },
             "optional": {},
         }
@@ -58,40 +60,27 @@ class GeneraImageTransformer:
     FUNCTION = "process"
     CATEGORY = "Genera/ImageProcessing"
 
-    def process(self, images, densePoseImage, height=None):  # height по умолчанию None
-        # print(f"Received image shape: {images.shape}")
-
+    def process(self, images, densePoseImage, height):
         if isinstance(images, torch.Tensor):
             if images.ndim != 4:
                 raise ValueError(f"Expected images to have 4 dimensions (Batch, W, H, C), but got {images.ndim} dimensions")
             images_np = images.detach().cpu().numpy()
-            # print(f"Converted torch.Tensor to numpy array with shape: {images_np.shape}")
         elif isinstance(images, np.ndarray):
             images_np = images
-            # print(f"Received numpy array with shape: {images_np.shape}")
         else:
             raise TypeError(f"Unsupported type for images: {type(images)}")
 
         if images_np.ndim != 4:
             raise ValueError(f"Expected images to have 4 dimensions (Batch, W, H, C), but got {images_np.ndim} dimensions")
 
-        first_image = images_np[0]
-        # print(f"First image shape (W, H, C): {first_image.shape}")
-
-        if first_image.ndim != 3:
-            raise ValueError(f"Expected first image to have 3 dimensions (W, H, C), but got {first_image.ndim} dimensions")
-
-        first_image_hwc = first_image
-
         transformer = ImageTransformer()
-        transformer.load_image(image=first_image_hwc)
+        transformer.load_image(image=images_np[0])
 
         M = np.array([
             [1.0, 0.0, .0],
             [0.0, 1.0, 0.0],
             [0.0, 0.0, 1.0]
         ], dtype=np.float32)
-        # print(f"Transformation matrix M:\n{M}")
 
         try:
             transformed_image = transformer.get_transformed_image(M)
@@ -101,19 +90,34 @@ class GeneraImageTransformer:
         except ValueError as e:
             print(f"Value error during warpPerspective: {e}")
             raise
+        
+        print(images.shape)
+        print(densePoseImage.shape)
+        
+        detector = HumanHeightDetector(densePoseImage.detach().cpu().numpy()[0])
+        top, botom, head_bottom = detector.do_measurments()
+        
+        detector.cv_image = self._resize_with_aspect_ratio(transformed_image, width=512)
+        transformed_image = detector.visualize()
+        
+        result_image = torch.from_numpy(transformed_image).unsqueeze(0)
 
-        if transformed_image.ndim == 2: # grayscale
-            transformed_image = np.expand_dims(transformed_image, axis=2)
+        return (result_image, )
+    
+    def _resize_with_aspect_ratio(self, image, width=None, height=None, inter=cv2.INTER_LANCZOS4):
+        h, w = image.shape[:2]
+        if width is None and height is None:
+            return image
 
-        if transformed_image.shape[2] == 1:
-            transformed_image = np.repeat(transformed_image, 3, axis=2)
-            print(f"Converted single channel to three channels, new shape: {transformed_image.shape}")
+        if width is not None:
+            ratio = width / float(w)
+            dim = (width, int(h * ratio))
+        else:
+            ratio = height / float(h)
+            dim = (int(w * ratio), height)
 
-        if isinstance(images, torch.Tensor):
-            transformed_tensor = torch.from_numpy(transformed_image).unsqueeze(0)
-            # print(f"Converted transformed image to torch.Tensor with shape: {transformed_tensor.shape}")
+        return cv2.resize(image, dim, interpolation=inter)
 
-        return (transformed_tensor, )
 
 # Исправленные маппинги узлов
 NODE_CLASS_MAPPINGS = {
