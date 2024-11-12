@@ -8,6 +8,7 @@ import requests
 from PIL import Image
 from io import BytesIO
 import numpy as np
+import torch
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -157,12 +158,15 @@ class BatchPreviewer:
             job_id = job["id"]
             if job_id in received_images:
                 try:
-                    # Convert image content to PIL format and then to numpy array
+                    # Convert image content to PIL format, then to numpy array, then to PyTorch tensor
                     image_data = received_images[job_id]
-                    image = Image.open(BytesIO(image_data))
-                    # Convert to NumPy array if required by ComfyUI
-                    image_np = np.array(image)
-                    images.append(image_np)
+                    image = Image.open(BytesIO(image_data)).convert(
+                        "RGB")  # Convert to RGB
+                    image_np = np.array(image)  # Convert to NumPy array
+                    image_tensor = torch.tensor(image_np).permute(
+                        2, 0, 1).float().div(255).cpu()  # Convert to tensor
+
+                    images.append(image_tensor)
                     logging.info(f"Image processed for job ID {job_id}.")
                 except Exception as e:
                     logging.error(
@@ -171,8 +175,10 @@ class BatchPreviewer:
             else:
                 images.append(None)
 
-        # Ensure the return format has exactly 4 items
-        result_images = tuple(images + [None] * (4 - len(images)))
+        # Ensure we have exactly 4 items in the tuple; fill remaining slots with None
+        result_images = tuple([img if img is not None else torch.zeros(
+            3, 1, 1) for img in images[:4]] + [torch.zeros(3, 1, 1)] * (4 - len(images)))
+
         logging.info(
             f"Returning {len([img for img in result_images if img is not None])} images.")
 
