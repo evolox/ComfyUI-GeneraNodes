@@ -151,10 +151,12 @@ class BatchPreviewer:
             logging.error(f"Error while waiting for responses: {e}")
             streaming_pull_future.cancel()
 
-        # Step h: Collect up to 4 images and fill empty slots with None
-        images = []
+        # Step h: Collect up to 4 images after receiving all job responses
+        # Initialize a list of 4 slots with None placeholders
+        images = [None] * 4
 
-        for job in jobs[:4]:  # Collect a maximum of 4 images
+        # Limit to 4 jobs for 4 output slots
+        for idx, job in enumerate(jobs[:4]):
             job_id = job["id"]
             if job_id in received_images:
                 try:
@@ -166,18 +168,16 @@ class BatchPreviewer:
                     image_tensor = torch.tensor(image_np).permute(
                         2, 0, 1).float().div(255).cpu()  # Convert to tensor
 
-                    images.append(image_tensor)
+                    # Place received image in the correct slot
+                    images[idx] = image_tensor
                     logging.info(f"Image processed for job ID {job_id}.")
                 except Exception as e:
                     logging.error(
                         f"Error processing image for job ID {job_id}: {e}")
-                    images.append(None)
-            else:
-                images.append(None)
 
-        # Ensure we have exactly 4 items in the tuple; fill remaining slots with None
-        result_images = tuple([img if img is not None else torch.zeros(
-            3, 1, 1) for img in images[:4]] + [torch.zeros(3, 1, 1)] * (4 - len(images)))
+        # Replace any remaining None values in images with placeholder tensors
+        result_images = tuple(
+            img if img is not None else torch.zeros(3, 1, 1) for img in images)
 
         logging.info(
             f"Returning {len([img for img in result_images if img is not None])} images.")
