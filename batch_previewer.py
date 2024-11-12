@@ -25,8 +25,8 @@ class BatchPreviewer:
             },
         }
 
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("Generated Images",)
+    RETURN_TYPES = ("IMAGE", "IMAGE", "IMAGE", "IMAGE",)
+    RETURN_NAMES = ("Preview 1", "Preview 2", "Preview 3", "Preview 4")
     FUNCTION = "process"
     OUTPUT_NODE = True
     CATEGORY = "Genera"
@@ -128,11 +128,11 @@ class BatchPreviewer:
             logging.error(f"Error while waiting for responses: {e}")
             streaming_pull_future.cancel()
 
-        # Step h: Return all downloaded images
+        # Step h: Return max 4 downloaded images
         images = [received_images[job["id"]]
                   for job in jobs if job["id"] in received_images]
-        logging.info(f"Returning {len(images)} images.")
-        return images
+        logging.info(f"Returning {len(images[:4])} images.")
+        return images[:4]  # Return up to 4 images
 
 
 NODE_CLASS_MAPPINGS = {
