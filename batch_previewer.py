@@ -3,12 +3,11 @@ import os
 import uuid
 import logging
 from google.cloud import pubsub_v1
-from google.cloud import storage
 import requests
+import time
 from PIL import Image
-from io import BytesIO
 import numpy as np
-import torch
+from io import BytesIO
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -36,9 +35,8 @@ class BatchPreviewer:
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "IMAGE", "IMAGE",
-                    "IMAGE",)  # Static 4 return slots
-    RETURN_NAMES = ("Preview 1", "Preview 2", "Preview 3", "Preview 4")
+    RETURN_TYPES = ("IMAGE",)  # Define each image individually
+    RETURN_NAMES = ("Preview Image",)
     FUNCTION = "process"
     OUTPUT_NODE = True
     CATEGORY = "Genera"
@@ -49,44 +47,36 @@ class BatchPreviewer:
         self.subscriber = pubsub_v1.SubscriberClient()
         self.topic_name = "projects/genera-408110/topics/space-previewer"
         self.subscription_id = "projects/genera-408110/subscriptions/space-previewer-result-sub"
-        self.bucket_client = storage.Client()
         logging.info("BatchPreviewer initialized successfully.")
 
     def process(self, prompt, seeds):
         logging.info("Processing job with prompt and seeds.")
-        # Step a: Parse seeds
+
+        # Parse seeds
         seed_numbers = [int(seed.strip())
                         for seed in seeds.split(",") if seed.strip().isdigit()]
         logging.info(f"Parsed seeds: {seed_numbers}")
 
-        # Step b: Load workflow from space_preview_v3.json
+        # Load workflow from JSON file
         try:
             with open(workflow_file_path) as f:
                 base_workflow = json.load(f)
             logging.info("Loaded base workflow successfully.")
         except Exception as e:
             logging.error(f"Error loading workflow: {e}")
-            return (None, None, None, None)
+            return []
 
         jobs = []
         job_ids = set()
 
-        # Step c: Modify workflow per seed
-        # Limit to a max of 4 seeds to match return slots
-        for seed in seed_numbers[:4]:
+        # Modify workflow per seed
+        for seed in seed_numbers:
             workflow = base_workflow.copy()
-            # Insert prompt text at key "530"
             if "530" in workflow:
                 workflow["530"]["inputs"]["text"] = prompt
-                logging.info(
-                    f"Inserted prompt text into workflow for seed {seed}.")
-
-            # Insert seed at key "81"
             if "81" in workflow:
                 workflow["81"]["inputs"]["noise_seed"] = seed
-                logging.info(f"Inserted seed {seed} into workflow.")
 
-            # Step d: Add UUID as job id
             job_id = str(uuid.uuid4())
             job_ids.add(job_id)
             job = {
@@ -94,9 +84,8 @@ class BatchPreviewer:
                 "workflow": workflow
             }
             jobs.append(job)
-            logging.info(f"Created job with ID {job_id} for seed {seed}.")
 
-            # Publish job to Pub/Sub topic
+            # Publish job to Pub/Sub
             try:
                 message = json.dumps(job).encode("utf-8")
                 self.publisher.publish(self.topic_name, message, job_id=job_id)
@@ -104,7 +93,6 @@ class BatchPreviewer:
             except Exception as e:
                 logging.error(f"Error publishing job {job_id}: {e}")
 
-        # Step f: Subscribe to results and wait for all responses
         received_images = {}
 
         def callback(message):
@@ -113,76 +101,49 @@ class BatchPreviewer:
                 job_id = data["id"]
                 if job_id in job_ids:
                     sas_url = data["url"]
-                    logging.info(f"Received message for job ID {
-                                 job_id} with SAS URL.")
 
                     # Download image from SAS URL
                     response = requests.get(sas_url)
                     if response.status_code == 200:
-                        received_images[job_id] = response.content
-                        logging.info(f"Downloaded image for job ID {job_id}.")
+                        # Convert image bytes to a NumPy array for compatibility
+                        image = Image.open(BytesIO(response.content))
+                        received_images[job_id] = np.array(image)
+                        logging.info(
+                            f"Downloaded and converted image for job ID {job_id}.")
                     else:
                         logging.error(f"Failed to download image for job ID {
                                       job_id}. Status code: {response.status_code}")
 
                     message.ack()
-                    # Remove job_id from the waiting list
                     job_ids.remove(job_id)
                 else:
-                    logging.warning(f"Received message for unknown job ID {
-                                    job_id}. Ignoring.")
-                    message.ack()  # Acknowledge non-matching messages as well
+                    message.ack()
 
             except Exception as e:
                 logging.error(f"Error processing message: {e}")
                 message.nack()
 
+        # Listen for responses with timeout mechanism
         streaming_pull_future = self.subscriber.subscribe(
             self.subscription_id, callback=callback)
+        timeout = 5  # Time to wait between checks
+        max_wait_time = 300  # Total max wait time (adjust as needed)
+        elapsed_time = 0
 
-        # Wait for all jobs to complete
-        try:
-            with self.subscriber:
-                logging.info("Listening for responses from Pub/Sub...")
-                while job_ids:  # Continue waiting until all job_ids are received
-                    # Adjust timeout as necessary
-                    streaming_pull_future.result(timeout=300)
-        except Exception as e:
-            logging.error(f"Error while waiting for responses: {e}")
-            streaming_pull_future.cancel()
+        logging.info("Listening for responses from Pub/Sub...")
+        while job_ids and elapsed_time < max_wait_time:
+            time.sleep(timeout)
+            elapsed_time += timeout
 
-        # Step h: Collect up to 4 images after receiving all job responses
-        # Initialize a list of 4 slots with None placeholders
-        images = [None] * 4
+        streaming_pull_future.cancel()  # Stop the subscription
 
-        # Limit to 4 jobs for 4 output slots
-        for idx, job in enumerate(jobs[:4]):
-            job_id = job["id"]
-            if job_id in received_images:
-                try:
-                    # Convert image content to PIL format, then to numpy array, then to PyTorch tensor
-                    image_data = received_images[job_id]
-                    image = Image.open(BytesIO(image_data)).convert(
-                        "RGB")  # Convert to RGB
-                    image_np = np.array(image)  # Convert to NumPy array
-                    image_tensor = torch.tensor(image_np).permute(
-                        2, 0, 1).float().div(255).cpu()  # Convert to tensor
+        # Return each image as a separate element in the tuple
+        images = tuple(received_images[job["id"]]
+                       for job in jobs if job["id"] in received_images)
 
-                    # Place received image in the correct slot
-                    images[idx] = image_tensor
-                    logging.info(f"Image processed for job ID {job_id}.")
-                except Exception as e:
-                    logging.error(
-                        f"Error processing image for job ID {job_id}: {e}")
+        logging.info(f"Returning {len(images)} images.")
 
-        # Replace any remaining None values in images with placeholder tensors
-        result_images = tuple(
-            img if img is not None else torch.zeros(3, 1, 1) for img in images)
-
-        logging.info(
-            f"Returning {len([img for img in result_images if img is not None])} images.")
-
-        return result_images  # Return a tuple with exactly 4 items
+        return images  # Return images separately for compatibility
 
 
 NODE_CLASS_MAPPINGS = {
