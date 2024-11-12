@@ -1,4 +1,5 @@
 import json
+import os
 import uuid
 import logging
 from google.cloud import pubsub_v1
@@ -7,6 +8,12 @@ import requests
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
+
+workflow_file_path = os.path.join(os.path.dirname(
+    os.path.abspath(__file__)), 'space_preview_api_v2.json')
+config_file_path = os.path.join(os.path.dirname(
+    os.path.abspath(__file__)), 'gcp_config.json')
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = config_file_path
 
 
 class BatchPreviewer:
@@ -35,8 +42,8 @@ class BatchPreviewer:
         logging.info("Initializing BatchPreviewer...")
         self.publisher = pubsub_v1.PublisherClient()
         self.subscriber = pubsub_v1.SubscriberClient()
-        self.topic_name = "projects/your-project-id/topics/space_preview"
-        self.result_topic_name = "projects/your-project-id/subscriptions/space_preview_result"
+        self.topic_name = "projects/genera-408110/topics/space-previewer"
+        self.result_topic_name = "projects/genera-408110/topics/space-previewer-result"
         self.bucket_client = storage.Client()
         logging.info("BatchPreviewer initialized successfully.")
 
@@ -49,7 +56,7 @@ class BatchPreviewer:
 
         # Step b: Load workflow from space_preview_api.json
         try:
-            with open('./space_preview_api.json') as f:
+            with open(workflow_file_path) as f:
                 base_workflow = json.load(f)
             logging.info("Loaded base workflow successfully.")
         except Exception as e:
