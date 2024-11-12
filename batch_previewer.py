@@ -146,7 +146,7 @@ class BatchPreviewer:
                 logging.info("Listening for responses from Pub/Sub...")
                 while job_ids:  # Continue waiting until all job_ids are received
                     # Adjust timeout as necessary
-                    streaming_pull_future.result(timeout=30)
+                    streaming_pull_future.result(timeout=300)
         except Exception as e:
             logging.error(f"Error while waiting for responses: {e}")
             streaming_pull_future.cancel()
