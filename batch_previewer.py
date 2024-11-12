@@ -5,12 +5,15 @@ import logging
 from google.cloud import pubsub_v1
 from google.cloud import storage
 import requests
+from PIL import Image
+from io import BytesIO
+import numpy as np
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 
 workflow_file_path = os.path.join(os.path.dirname(
-    os.path.abspath(__file__)), 'space_preview_api_v2.json')
+    os.path.abspath(__file__)), 'space_preview_v3.json')
 config_file_path = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), 'gcp_config.json')
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = config_file_path
@@ -32,7 +35,8 @@ class BatchPreviewer:
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "IMAGE", "IMAGE", "IMAGE",)
+    RETURN_TYPES = ("IMAGE", "IMAGE", "IMAGE",
+                    "IMAGE",)  # Static 4 return slots
     RETURN_NAMES = ("Preview 1", "Preview 2", "Preview 3", "Preview 4")
     FUNCTION = "process"
     OUTPUT_NODE = True
@@ -43,7 +47,7 @@ class BatchPreviewer:
         self.publisher = pubsub_v1.PublisherClient()
         self.subscriber = pubsub_v1.SubscriberClient()
         self.topic_name = "projects/genera-408110/topics/space-previewer"
-        self.result_topic_name = "projects/genera-408110/topics/space-previewer-result"
+        self.subscription_id = "projects/genera-408110/subscriptions/space-previewer-result-sub"
         self.bucket_client = storage.Client()
         logging.info("BatchPreviewer initialized successfully.")
 
@@ -54,19 +58,21 @@ class BatchPreviewer:
                         for seed in seeds.split(",") if seed.strip().isdigit()]
         logging.info(f"Parsed seeds: {seed_numbers}")
 
-        # Step b: Load workflow from space_preview_api.json
+        # Step b: Load workflow from space_preview_v3.json
         try:
             with open(workflow_file_path) as f:
                 base_workflow = json.load(f)
             logging.info("Loaded base workflow successfully.")
         except Exception as e:
             logging.error(f"Error loading workflow: {e}")
-            return []
+            return (None, None, None, None)
 
         jobs = []
+        job_ids = set()
 
         # Step c: Modify workflow per seed
-        for seed in seed_numbers:
+        # Limit to a max of 4 seeds to match return slots
+        for seed in seed_numbers[:4]:
             workflow = base_workflow.copy()
             # Insert prompt text at key "530"
             if "530" in workflow:
@@ -81,6 +87,7 @@ class BatchPreviewer:
 
             # Step d: Add UUID as job id
             job_id = str(uuid.uuid4())
+            job_ids.add(job_id)
             job = {
                 "id": job_id,
                 "workflow": workflow
@@ -103,43 +110,73 @@ class BatchPreviewer:
             try:
                 data = json.loads(message.data.decode("utf-8"))
                 job_id = data["id"]
-                sas_url = data["sas_url"]
-                logging.info(f"Received message for job ID {
-                             job_id} with SAS URL.")
+                if job_id in job_ids:
+                    sas_url = data["url"]
+                    logging.info(f"Received message for job ID {
+                                 job_id} with SAS URL.")
 
-                # Download image from SAS URL
-                response = requests.get(sas_url)
-                if response.status_code == 200:
-                    received_images[job_id] = response.content
-                    logging.info(f"Downloaded image for job ID {job_id}.")
+                    # Download image from SAS URL
+                    response = requests.get(sas_url)
+                    if response.status_code == 200:
+                        received_images[job_id] = response.content
+                        logging.info(f"Downloaded image for job ID {job_id}.")
+                    else:
+                        logging.error(f"Failed to download image for job ID {
+                                      job_id}. Status code: {response.status_code}")
+
+                    message.ack()
+                    # Remove job_id from the waiting list
+                    job_ids.remove(job_id)
                 else:
-                    logging.error(f"Failed to download image for job ID {
-                                  job_id}. Status code: {response.status_code}")
+                    logging.warning(f"Received message for unknown job ID {
+                                    job_id}. Ignoring.")
+                    message.ack()  # Acknowledge non-matching messages as well
 
-                message.ack()
             except Exception as e:
-                logging.error(
-                    f"Error processing message for job ID {job_id}: {e}")
+                logging.error(f"Error processing message: {e}")
                 message.nack()
 
         streaming_pull_future = self.subscriber.subscribe(
-            self.result_topic_name, callback=callback)
+            self.subscription_id, callback=callback)
 
         # Wait for all jobs to complete
         try:
             with self.subscriber:
                 logging.info("Listening for responses from Pub/Sub...")
-                # Adjust timeout as necessary
-                streaming_pull_future.result(timeout=300)
+                while job_ids:  # Continue waiting until all job_ids are received
+                    # Adjust timeout as necessary
+                    streaming_pull_future.result(timeout=30)
         except Exception as e:
             logging.error(f"Error while waiting for responses: {e}")
             streaming_pull_future.cancel()
 
-        # Step h: Return max 4 downloaded images
-        images = [received_images[job["id"]]
-                  for job in jobs if job["id"] in received_images]
-        logging.info(f"Returning {len(images[:4])} images.")
-        return images[:4]  # Return up to 4 images
+        # Step h: Collect up to 4 images and fill empty slots with None
+        images = []
+
+        for job in jobs[:4]:  # Collect a maximum of 4 images
+            job_id = job["id"]
+            if job_id in received_images:
+                try:
+                    # Convert image content to PIL format and then to numpy array
+                    image_data = received_images[job_id]
+                    image = Image.open(BytesIO(image_data))
+                    # Convert to NumPy array if required by ComfyUI
+                    image_np = np.array(image)
+                    images.append(image_np)
+                    logging.info(f"Image processed for job ID {job_id}.")
+                except Exception as e:
+                    logging.error(
+                        f"Error processing image for job ID {job_id}: {e}")
+                    images.append(None)
+            else:
+                images.append(None)
+
+        # Ensure the return format has exactly 4 items
+        result_images = tuple(images + [None] * (4 - len(images)))
+        logging.info(
+            f"Returning {len([img for img in result_images if img is not None])} images.")
+
+        return result_images  # Return a tuple with exactly 4 items
 
 
 NODE_CLASS_MAPPINGS = {
