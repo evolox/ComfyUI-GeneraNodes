@@ -137,13 +137,18 @@ class BatchPreviewer:
 
         streaming_pull_future.cancel()  # Stop the subscription
 
-        # Return each image as a separate element in the tuple
-        images = tuple(received_images[job["id"]]
-                       for job in jobs if job["id"] in received_images)
+        # Ensure there are images to return, or return a default image if none are received
+        images = [received_images.get(job["id"], None) for job in jobs]
+
+        # Remove None values (failed downloads) to avoid NoneType errors
+        images = [img for img in images if img is not None]
+
+        if not images:
+            logging.warning("No images received; returning an empty result.")
+            return ([],)  # Return empty tuple if no images were downloaded
 
         logging.info(f"Returning {len(images)} images.")
-
-        return images  # Return images separately for compatibility
+        return tuple(images)  # Return images separately for compatibility
 
 
 NODE_CLASS_MAPPINGS = {
