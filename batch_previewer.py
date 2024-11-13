@@ -5,8 +5,9 @@ import logging
 from google.cloud import pubsub_v1
 import requests
 import time
-from PIL import Image
+from PIL import Image, ImageSequence, ImageOps
 import numpy as np
+import torch
 from io import BytesIO
 
 # Set up logging
@@ -17,6 +18,46 @@ workflow_file_path = os.path.join(os.path.dirname(
 config_file_path = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), 'gcp_config.json')
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = config_file_path
+
+
+def pil2tensor(img):
+    output_images = []
+    output_masks = []
+    for i in ImageSequence.Iterator(img):
+        i = ImageOps.exif_transpose(i)
+        if i.mode == 'I':
+            i = i.point(lambda i: i * (1 / 255))
+        image = i.convert("RGB")
+        image = np.array(image).astype(np.float32) / 255.0
+        image = torch.from_numpy(image)[None,]
+        if 'A' in i.getbands():
+            mask = np.array(i.getchannel('A')).astype(np.float32) / 255.0
+            mask = 1. - torch.from_numpy(mask)
+        else:
+            mask = torch.zeros((64, 64), dtype=torch.float32, device="cpu")
+        output_images.append(image)
+        output_masks.append(mask.unsqueeze(0))
+
+    if len(output_images) > 1:
+        output_image = torch.cat(output_images, dim=0)
+        output_mask = torch.cat(output_masks, dim=0)
+    else:
+        output_image = output_images[0]
+        output_mask = output_masks[0]
+
+    return (output_image, output_mask)
+
+
+def load_image(image_source):
+    if image_source.startswith('http'):
+        print(image_source)
+        response = requests.get(image_source)
+        img = Image.open(BytesIO(response.content))
+        file_name = image_source.split('/')[-1]
+    else:
+        img = Image.open(image_source)
+        file_name = os.path.basename(image_source)
+    return img, file_name
 
 
 class BatchPreviewer:
@@ -35,8 +76,9 @@ class BatchPreviewer:
             },
         }
 
-    RETURN_TYPES = ("IMAGE",)  # Define each image individually
-    RETURN_NAMES = ("Preview Image",)
+    # Define each image individually
+    RETURN_TYPES = ("IMAGE", "IMAGE", "IMAGE", "IMAGE")
+    RETURN_NAMES = ("image 1", "image 2", "image 3", "image 4")
     FUNCTION = "process"
     OUTPUT_NODE = True
     CATEGORY = "Genera"
@@ -93,26 +135,18 @@ class BatchPreviewer:
             except Exception as e:
                 logging.error(f"Error publishing job {job_id}: {e}")
 
-        received_images = {}
+        received_images = []
 
         def callback(message):
             try:
                 data = json.loads(message.data.decode("utf-8"))
                 job_id = data["id"]
                 if job_id in job_ids:
-                    sas_url = data["url"]
+                    url = data["url"]
 
-                    # Download image from SAS URL
-                    response = requests.get(sas_url)
-                    if response.status_code == 200:
-                        # Convert image bytes to a NumPy array for compatibility
-                        image = Image.open(BytesIO(response.content))
-                        received_images[job_id] = np.array(image)
-                        logging.info(
-                            f"Downloaded and converted image for job ID {job_id}.")
-                    else:
-                        logging.error(f"Failed to download image for job ID {
-                                      job_id}. Status code: {response.status_code}")
+                    img, name = load_image(url)
+                    img_out, mask_out = pil2tensor(img)
+                    received_images.append(img_out)
 
                     message.ack()
                     job_ids.remove(job_id)
@@ -137,18 +171,8 @@ class BatchPreviewer:
 
         streaming_pull_future.cancel()  # Stop the subscription
 
-        # Ensure there are images to return, or return a default image if none are received
-        images = [received_images.get(job["id"], None) for job in jobs]
-
-        # Remove None values (failed downloads) to avoid NoneType errors
-        images = [img for img in images if img is not None]
-
-        if not images:
-            logging.warning("No images received; returning an empty result.")
-            return ([],)  # Return empty tuple if no images were downloaded
-
-        logging.info(f"Returning {len(images)} images.")
-        return tuple(images)  # Return images separately for compatibility
+        # Return images separately for compatibility
+        return tuple(received_images)
 
 
 NODE_CLASS_MAPPINGS = {
