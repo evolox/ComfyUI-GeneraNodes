@@ -3,18 +3,20 @@ import os
 import uuid
 import logging
 from google.cloud import pubsub_v1
+from google.cloud import storage
 import requests
 import time
 from PIL import Image, ImageSequence, ImageOps
 import numpy as np
 import torch
 from io import BytesIO
+import folder_paths
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 
 workflow_file_path = os.path.join(os.path.dirname(
-    os.path.abspath(__file__)), 'space_preview_v3.json')
+    os.path.abspath(__file__)), 'space_preview_v4.json')
 config_file_path = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), 'gcp_config.json')
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = config_file_path
@@ -73,6 +75,8 @@ class BatchPreviewer:
                     "multiline": False,
                     "default": "",
                 }),
+                "lora_name": (folder_paths.get_filename_list("loras"), {"tooltip": "The name of the LoRA."}),
+                "strength_model": ("FLOAT", {"default": 1.0, "min": -100.0, "max": 100.0, "step": 0.01, "tooltip": "How strongly to modify the diffusion model. This value can be negative."}),
             },
         }
 
@@ -89,10 +93,19 @@ class BatchPreviewer:
         self.subscriber = pubsub_v1.SubscriberClient()
         self.topic_name = "projects/genera-408110/topics/space-previewer"
         self.subscription_id = "projects/genera-408110/subscriptions/space-previewer-result-sub"
+        storage_client = storage.Client()
+        self.bucket = storage_client.bucket("space-previewer")
         logging.info("BatchPreviewer initialized successfully.")
 
-    def process(self, prompt, seeds):
+    def process(self, prompt, seeds, lora_name, strenght_model):
         logging.info("Processing job with prompt and seeds.")
+
+        lora_path = folder_paths.get_full_path_or_raise("loras", lora_name)
+        # Destination in the bucket
+        destination_blob_name = f"loras/{lora_name}"
+        blob = self.bucket.blob(destination_blob_name)
+        blob.upload_from_filename(lora_path)
+        print(f"File {lora_name} uploaded to {destination_blob_name}.")
 
         # Parse seeds
         seed_numbers = [int(seed.strip())
@@ -114,16 +127,21 @@ class BatchPreviewer:
         # Modify workflow per seed
         for seed in seed_numbers:
             workflow = base_workflow.copy()
+
             if "530" in workflow:
                 workflow["530"]["inputs"]["text"] = prompt
             if "81" in workflow:
                 workflow["81"]["inputs"]["noise_seed"] = seed
+            if "517" in workflow:
+                workflow["530"]["inputs"]["lora_name"] = lora_name
+                workflow["530"]["inputs"]["strength_model"] = strenght_model
 
             job_id = str(uuid.uuid4())
             job_ids.add(job_id)
             job = {
                 "id": job_id,
-                "workflow": workflow
+                "workflow": workflow,
+                "uploads": {"loras": lora_name},
             }
             jobs.append(job)
 
