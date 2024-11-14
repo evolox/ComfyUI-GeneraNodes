@@ -16,7 +16,7 @@ import folder_paths
 logging.basicConfig(level=logging.INFO)
 
 workflow_file_path = os.path.join(os.path.dirname(
-    os.path.abspath(__file__)), 'space_preview_v5.json')
+    os.path.abspath(__file__)), 'space_preview_v4.json')
 config_file_path = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), 'gcp_config.json')
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = config_file_path
@@ -140,8 +140,11 @@ class BatchPreviewer:
             if "81" in workflow:
                 workflow["81"]["inputs"]["noise_seed"] = seed
             if "517" in workflow:
-                workflow["530"]["inputs"]["lora_name"] = lora_name
-                workflow["530"]["inputs"]["strength_model"] = strength_model
+                workflow["517"]["inputs"]["lora_name"] = lora_name
+                workflow["517"]["inputs"]["strength_model"] = strength_model
+            if "532" in workflow:
+                workflow["532"]["inputs"]["filename_prefix"] = str(uuid.uuid4())[
+                    :4]
 
             job_id = str(uuid.uuid4())
             job_ids.add(job_id)
