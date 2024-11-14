@@ -141,7 +141,7 @@ class BatchPreviewer:
             job = {
                 "id": job_id,
                 "workflow": workflow,
-                "uploads": {"loras": lora_name},
+                "uploads": {"loras": [lora_name]},
             }
             jobs.append(job)
 
