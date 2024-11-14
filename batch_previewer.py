@@ -16,7 +16,7 @@ import folder_paths
 logging.basicConfig(level=logging.INFO)
 
 workflow_file_path = os.path.join(os.path.dirname(
-    os.path.abspath(__file__)), 'space_preview_v4.json')
+    os.path.abspath(__file__)), 'space_preview_v5.json')
 config_file_path = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), 'gcp_config.json')
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = config_file_path
@@ -97,15 +97,22 @@ class BatchPreviewer:
         self.bucket = storage_client.bucket("space-previewer")
         logging.info("BatchPreviewer initialized successfully.")
 
-    def process(self, prompt, seeds, lora_name, strenght_model):
+    def process(self, prompt, seeds, lora_name, strength_model):
         logging.info("Processing job with prompt and seeds.")
 
         lora_path = folder_paths.get_full_path_or_raise("loras", lora_name)
         # Destination in the bucket
         destination_blob_name = f"loras/{lora_name}"
         blob = self.bucket.blob(destination_blob_name)
-        blob.upload_from_filename(lora_path)
-        print(f"File {lora_name} uploaded to {destination_blob_name}.")
+
+        # Check if the blob already exists
+        if not blob.exists():
+            # Upload the file if it does not exist
+            blob.upload_from_filename(lora_path)
+            print(f"File {lora_name} uploaded to {destination_blob_name}.")
+        else:
+            print(f"File {lora_name} already exists at {
+                  destination_blob_name}, skipping upload.")
 
         # Parse seeds
         seed_numbers = [int(seed.strip())
@@ -134,7 +141,7 @@ class BatchPreviewer:
                 workflow["81"]["inputs"]["noise_seed"] = seed
             if "517" in workflow:
                 workflow["530"]["inputs"]["lora_name"] = lora_name
-                workflow["530"]["inputs"]["strength_model"] = strenght_model
+                workflow["530"]["inputs"]["strength_model"] = strength_model
 
             job_id = str(uuid.uuid4())
             job_ids.add(job_id)
