@@ -4,7 +4,13 @@ function muteAllPreviews(mute) {
   // Iterate through all nodes in the graph
   for (let node of app.graph._nodes) {
     // Check if the node is of type 'PreviewImage'
-    if (node.type === "PreviewImage" || node.type === "PreviewMask") {
+    if (
+      node.type === "PreviewImage" ||
+      node.type === "PreviewMask" ||
+      node.type === "PreviewBridge" ||
+      node.type === "Image Comparer (rgthree)" ||
+      node.type === "MaskPreview+"
+    ) {
       // Toggle the mute state using the node's internal muting method
       node.mode = mute ? 2 : 0;
     }
