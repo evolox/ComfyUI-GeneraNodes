@@ -3,3 +3,5 @@ google-cloud-pubsub
 requests
 Pillow
 numpy
+dearpygui
+opencv-python
