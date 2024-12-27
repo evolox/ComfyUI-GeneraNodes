@@ -4,16 +4,15 @@
 
     if (!container) return;
 
-    // Create Image Upload Input
-    const imageInput = document.createElement("input");
-    imageInput.type = "file";
-    imageInput.accept = "image/*";
-    imageInput.style.marginBottom = "10px";
-    container.appendChild(imageInput);
+    // Create Image Upload Button
+    const loadImageButton = document.createElement("button");
+    loadImageButton.textContent = "Load Image";
+    loadImageButton.style.marginBottom = "10px";
+    container.appendChild(loadImageButton);
 
     // Create Drawing Canvas
     const canvas = document.createElement("canvas");
-    canvas.width = 256;
+    canvas.width = 256; // Default size, updated on image load
     canvas.height = 256;
     canvas.style.border = "1px solid #ccc";
     canvas.style.cursor = "crosshair";
@@ -22,26 +21,35 @@
     const ctx = canvas.getContext("2d");
     let drawing = false;
 
-    // Handle Image Upload
-    imageInput.addEventListener("change", (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
+    // Handle Image Loading
+    loadImageButton.addEventListener("click", () => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.style.display = "none";
 
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          canvas.width = img.width;
-          canvas.height = img.height;
-          ctx.drawImage(img, 0, 0);
+      input.addEventListener("change", (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            node.sendData({ image_data: e.target.result });
+          };
+          img.src = e.target.result;
         };
-        img.src = e.target.result;
-        node.sendData({ image_data: e.target.result });
-      };
-      reader.readAsDataURL(file);
+        reader.readAsDataURL(file);
+      });
+
+      input.click();
     });
 
-    // Drawing Events
+    // Drawing Logic
     canvas.addEventListener("mousedown", (e) => {
       drawing = true;
       ctx.beginPath();
