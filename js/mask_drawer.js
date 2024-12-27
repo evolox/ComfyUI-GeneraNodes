@@ -1,7 +1,6 @@
 (function () {
   function setupMaskDrawer(node) {
     const container = node.querySelector(".node-content");
-
     if (!container) return;
 
     // Create Drawing Canvas
@@ -10,6 +9,7 @@
     canvas.height = 256;
     canvas.style.border = "1px solid #ccc";
     canvas.style.cursor = "crosshair";
+    canvas.style.touchAction = "none"; // Prevent default touch behavior
     container.appendChild(canvas);
 
     const ctx = canvas.getContext("2d");
@@ -29,7 +29,7 @@
       }
     });
 
-    // Drawing Logic
+    // 🖱️ **Intercept Mouse Events**
     canvas.addEventListener("mousedown", (e) => {
       drawing = true;
       ctx.beginPath();
@@ -39,7 +39,7 @@
     canvas.addEventListener("mousemove", (e) => {
       if (!drawing) return;
       ctx.lineTo(e.offsetX, e.offsetY);
-      ctx.strokeStyle = "rgba(0, 255, 0, 1)";
+      ctx.strokeStyle = "rgba(0, 255, 0, 1)"; // Green mask stroke
       ctx.lineWidth = 5;
       ctx.stroke();
     });
@@ -49,9 +49,18 @@
       ctx.closePath();
     });
 
-    // Send Mask Data to Backend
+    canvas.addEventListener("mouseleave", () => {
+      drawing = false; // Stop drawing if the mouse leaves the canvas
+    });
+
+    // 🖥️ **Ensure Canvas Captures All Events**
+    canvas.addEventListener("pointerdown", (e) => e.stopPropagation());
+    canvas.addEventListener("pointermove", (e) => e.stopPropagation());
+    canvas.addEventListener("pointerup", (e) => e.stopPropagation());
+
+    // 🎯 **Save Mask Data to Backend**
     node.addEventListener("save", () => {
-      const maskData = canvas.toDataURL(); // Encode to Base64
+      const maskData = canvas.toDataURL("image/png"); // Encode to Base64
       node.sendData({ mask_data: maskData });
     });
   }
