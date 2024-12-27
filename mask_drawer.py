@@ -3,7 +3,8 @@ import hashlib
 import numpy as np
 import torch
 from PIL import Image, ImageOps, ImageSequence
-import folder_paths, node_helpers
+import folder_paths
+import node_helpers
 
 
 class MaskDrawer:
