@@ -4,15 +4,9 @@
 
     if (!container) return;
 
-    // Create Image Upload Button
-    const loadImageButton = document.createElement("button");
-    loadImageButton.textContent = "Load Image";
-    loadImageButton.style.marginBottom = "10px";
-    container.appendChild(loadImageButton);
-
     // Create Drawing Canvas
     const canvas = document.createElement("canvas");
-    canvas.width = 256; // Default size, updated on image load
+    canvas.width = 256;
     canvas.height = 256;
     canvas.style.border = "1px solid #ccc";
     canvas.style.cursor = "crosshair";
@@ -21,32 +15,18 @@
     const ctx = canvas.getContext("2d");
     let drawing = false;
 
-    // Handle Image Loading
-    loadImageButton.addEventListener("click", () => {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = "image/*";
-      input.style.display = "none";
-
-      input.addEventListener("change", (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const img = new Image();
-          img.onload = () => {
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
-            node.sendData({ image_data: e.target.result });
-          };
-          img.src = e.target.result;
+    // Watch for Image Selection
+    node.addEventListener("input", (event) => {
+      if (event.detail && event.detail.input_name === "image") {
+        const imagePath = event.detail.value;
+        const img = new Image();
+        img.onload = () => {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
         };
-        reader.readAsDataURL(file);
-      });
-
-      input.click();
+        img.src = `/input/${imagePath}`;
+      }
     });
 
     // Drawing Logic
@@ -71,7 +51,7 @@
 
     // Send Mask Data to Backend
     node.addEventListener("save", () => {
-      const maskData = canvas.toDataURL();
+      const maskData = canvas.toDataURL(); // Encode to Base64
       node.sendData({ mask_data: maskData });
     });
   }
