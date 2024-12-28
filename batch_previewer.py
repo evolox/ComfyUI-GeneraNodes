@@ -111,8 +111,7 @@ class BatchPreviewer:
             blob.upload_from_filename(lora_path)
             print(f"File {lora_name} uploaded to {destination_blob_name}.")
         else:
-            print(f"File {lora_name} already exists at {
-                  destination_blob_name}, skipping upload.")
+            print(f"File {lora_name} already exists at {destination_blob_name}, skipping upload.")
 
         # Parse seeds
         seed_numbers = [int(seed.strip())
