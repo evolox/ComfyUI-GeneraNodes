@@ -41,16 +41,16 @@ installed_modules = {}
 # installed_modules = {m[1] for m in pkgutil.iter_modules()}
 
 def get_version_extension():
-    version = ''
-    toml_file = os.path.join(extension_folder, 'pyproject.toml')
-    if(os.path.isfile(toml_file)):
-        try:
-            with open(toml_file, "r") as v:
-                version = list(filter(lambda l: l.startswith("version"),v.readlines()))[0]
-                version = version.split("=")[1].replace("\"","").strip()
-                return f" \033[1;34mv{version}\033[0m\033[1;35m"
-        except Exception as e:
-            print(e)
+    version = '3'
+    # toml_file = os.path.join(extension_folder, 'pyproject.toml')
+    # if(os.path.isfile(toml_file)):
+    #     try:
+    #         with open(toml_file, "r") as v:
+    #             version = list(filter(lambda l: l.startswith("version"),v.readlines()))[0]
+    #             version = version.split("=")[1].replace("\"","").strip()
+    #             return f" \033[1;34mv{version}\033[0m\033[1;35m"
+    #     except Exception as e:
+    #         print(e)
 
     return version
 
